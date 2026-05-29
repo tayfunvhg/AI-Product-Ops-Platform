@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+html,
+body {
+  background: #0a0f0d;
+  color: #e6f3ec;
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Thin scrollbars for the dark theme */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #1a2b25;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-white/5 bg-ink-700/60 p-5 shadow-lg shadow-black/20;
+  }
+  .card-green {
+    @apply rounded-2xl border border-brand-300/30 bg-brand-300/10 p-5;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-white/70;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition;
+  }
+  .btn-primary {
+    @apply btn bg-brand-500 text-ink-900 hover:bg-brand-400;
+  }
+  .btn-ghost {
+    @apply btn border border-white/10 text-white/80 hover:bg-white/5;
+  }
+  .section-title {
+    @apply text-xs font-semibold uppercase tracking-wider text-brand-300/80;
+  }
+}
