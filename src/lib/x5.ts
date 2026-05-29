@@ -35,6 +35,33 @@ export function getX5Config(): X5Config | null {
   return { apiKey, url, model, authMode };
 }
 
+/**
+ * Candidate endpoint URLs to try, in order.
+ *
+ * The integration guide documents `api-copilot.x5.ru`, but that host does not
+ * always resolve, while `copilot.x5.ru` / `api.x5.ru` do. To save the user from
+ * guessing the right host, we try the configured URL first and then the same
+ * path on known alternate hosts. We only fall through on network/DNS errors —
+ * never on a real HTTP response (auth, 4xx, 5xx) from a host that answered.
+ */
+export function candidateUrls(primary: string): string[] {
+  const urls = [primary];
+  try {
+    const u = new URL(primary);
+    const altHosts = ["api-copilot.x5.ru", "copilot.x5.ru", "api.x5.ru"];
+    for (const host of altHosts) {
+      if (host === u.host) continue;
+      const alt = new URL(primary);
+      alt.host = host;
+      const s = alt.toString();
+      if (!urls.includes(s)) urls.push(s);
+    }
+  } catch {
+    // primary not a valid URL — just return it as-is
+  }
+  return urls;
+}
+
 export type ChatResult = {
   ok: boolean;
   text: string;
@@ -80,60 +107,63 @@ export async function x5ChatCompletion(
   let lastErr = "";
   let lastStatus: number | undefined;
 
-  for (const authHeaders of variants) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          ...authHeaders,
-        },
-        body,
-        signal: controller.signal,
-        cache: "no-store",
-      });
-      clearTimeout(timer);
-      lastStatus = resp.status;
+  // Try the configured URL, then known alternate hosts on network/DNS errors.
+  for (const endpoint of candidateUrls(url)) {
+    for (const authHeaders of variants) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const resp = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            ...authHeaders,
+          },
+          body,
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        clearTimeout(timer);
+        lastStatus = resp.status;
 
-      if (!resp.ok) {
-        const errText = await safeText(resp);
-        if (resp.status === 401 || resp.status === 403) {
-          lastErr = `auth ${resp.status}: ${errText}`;
-          continue; // retry alternate auth header
+        if (!resp.ok) {
+          const errText = await safeText(resp);
+          if (resp.status === 401 || resp.status === 403) {
+            lastErr = `auth ${resp.status}: ${errText}`;
+            continue; // retry alternate auth header on this host
+          }
+          return {
+            ok: false,
+            text: "",
+            latencyMs: Date.now() - started,
+            model,
+            status: resp.status,
+            error: `HTTP ${resp.status}: ${errText}`,
+          };
         }
+
+        const data = await resp.json().catch(async () => ({
+          _raw_text: await safeText(resp),
+        }));
         return {
-          ok: false,
-          text: "",
+          ok: true,
+          text: extractText(data),
           latencyMs: Date.now() - started,
           model,
           status: resp.status,
-          error: `HTTP ${resp.status}: ${errText}`,
+          raw: data,
         };
+      } catch (e: unknown) {
+        clearTimeout(timer);
+        lastErr =
+          e instanceof Error
+            ? e.name === "AbortError"
+              ? `timeout после ${timeoutMs}ms`
+              : e.message
+            : String(e);
+        // network / DNS error -> try next auth variant, then next host
       }
-
-      const data = await resp.json().catch(async () => ({
-        _raw_text: await safeText(resp),
-      }));
-      return {
-        ok: true,
-        text: extractText(data),
-        latencyMs: Date.now() - started,
-        model,
-        status: resp.status,
-        raw: data,
-      };
-    } catch (e: unknown) {
-      clearTimeout(timer);
-      lastErr =
-        e instanceof Error
-          ? e.name === "AbortError"
-            ? `timeout после ${timeoutMs}ms`
-            : e.message
-          : String(e);
-      // network / DNS errors -> try next variant then give up
     }
   }
 
