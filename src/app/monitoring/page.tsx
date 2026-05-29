@@ -69,7 +69,9 @@ function Column({
 }
 
 export default function MonitoringPage() {
-  const [agent] = agentsForModule("monitoring");
+  const monitoringAgents = agentsForModule("monitoring");
+  const metricGen = monitoringAgents.find((a) => a.id === "metric-generator");
+  const watcher = monitoringAgents.find((a) => a.id === "monitoring-agent");
   const productMetrics = METRICS.filter((m) => m.kind === "product");
   const productionMetrics = METRICS.filter((m) => m.kind === "production");
   const productAlerts = ALERTS.filter((a) => a.kind === "product");
@@ -79,8 +81,22 @@ export default function MonitoringPage() {
     <div className="space-y-8">
       <PageHeader
         title="Monitoring & Alert"
-        subtitle="Продуктовые и производственные метрики с алертами. Цифровой агент объясняет причины и предлагает шаги."
+        subtitle="Продуктовые и производственные метрики с алертами. Агенты помогают сформировать метрики и объяснить алерты."
       />
+
+      {metricGen && (
+        <div>
+          <h2 className="section-title mb-3">Генератор метрик</h2>
+          <AgentPanel
+            agentId={metricGen.id}
+            name={metricGen.name}
+            tagline={metricGen.tagline}
+            suggestions={metricGen.suggestions}
+            greeting={metricGen.greeting}
+            featured
+          />
+        </div>
+      )}
 
       <div className="grid gap-8 xl:grid-cols-2">
         <Column title="Мои продуктовые метрики" metrics={productMetrics} alerts={productAlerts} />
@@ -93,12 +109,12 @@ export default function MonitoringPage() {
 
       <div className="max-w-3xl">
         <h2 className="section-title mb-3">Цифровой агент по мониторингу</h2>
-        {agent && (
+        {watcher && (
           <AgentPanel
-            agentId={agent.id}
-            name={agent.name}
-            tagline={agent.tagline}
-            suggestions={agent.suggestions}
+            agentId={watcher.id}
+            name={watcher.name}
+            tagline={watcher.tagline}
+            suggestions={watcher.suggestions}
           />
         )}
       </div>

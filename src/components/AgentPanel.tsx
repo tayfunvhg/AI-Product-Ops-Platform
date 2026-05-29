@@ -10,15 +10,21 @@ export default function AgentPanel({
   tagline,
   suggestions = [],
   compact = false,
+  featured = false,
+  greeting,
 }: {
   agentId: string;
   name: string;
   tagline: string;
   suggestions?: string[];
   compact?: boolean;
+  featured?: boolean;
+  greeting?: string;
 }) {
   const [open, setOpen] = useState(!compact);
-  const [messages, setMessages] = useState<Msg[]>([]);
+  const [messages, setMessages] = useState<Msg[]>(
+    greeting ? [{ role: "assistant", content: greeting }] : []
+  );
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -79,7 +85,7 @@ export default function AgentPanel({
         <div className="mt-4 flex flex-col gap-3">
           <div
             ref={scrollRef}
-            className="max-h-72 space-y-3 overflow-y-auto pr-1"
+            className={`${featured ? "max-h-[28rem]" : "max-h-72"} space-y-3 overflow-y-auto pr-1`}
           >
             {messages.length === 0 && (
               <div className="rounded-xl border border-white/5 bg-ink-800/60 p-3 text-sm text-white/55">
@@ -112,7 +118,7 @@ export default function AgentPanel({
             )}
           </div>
 
-          {messages.length === 0 && suggestions.length > 0 && (
+          {!messages.some((m) => m.role === "user") && suggestions.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {suggestions.map((s) => (
                 <button
