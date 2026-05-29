@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       configured: true,
-      reply: `⚠️ Не удалось получить ответ от X5 Copilot: ${res.error ?? "ошибка"}.\n\nЕсли вы вне сети X5/VPN, эндпоинт api-copilot.x5.ru может не резолвиться. Проверьте подключение в «Настройках».`,
+      reply: `⚠️ Не удалось получить ответ от LLM: ${res.error ?? "ошибка"}.\n\nПроверьте подключение в разделе «Настройки». Для X5 нужен доступ к сети X5/VPN; как альтернатива для теста — провайдер DeepSeek (LLM_PROVIDER=deepseek).`,
     });
   }
 

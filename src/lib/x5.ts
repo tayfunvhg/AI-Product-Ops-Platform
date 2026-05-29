@@ -19,9 +19,30 @@ export type X5Config = {
   url: string;
   model: string;
   authMode: "bearer" | "x-api-key";
+  provider: "x5" | "deepseek";
 };
 
+/**
+ * Resolve LLM provider config from env.
+ *
+ * Default provider is X5 Copilot. Set LLM_PROVIDER=deepseek to use DeepSeek
+ * instead (handy for local testing without the corporate VPN — DeepSeek is a
+ * public, OpenAI-compatible endpoint). Both are chat-completions compatible,
+ * so the rest of the client is unchanged.
+ */
 export function getX5Config(): X5Config | null {
+  const provider = (process.env.LLM_PROVIDER || "x5").trim().toLowerCase();
+
+  if (provider === "deepseek") {
+    const apiKey = (process.env.DEEPSEEK_API_KEY || "").trim();
+    const url = (
+      process.env.DEEPSEEK_COMPLETIONS_URL || "https://api.deepseek.com/chat/completions"
+    ).trim();
+    const model = (process.env.DEEPSEEK_MODEL || "deepseek-chat").trim();
+    if (!apiKey || apiKey === "your-key-here") return null;
+    return { apiKey, url, model, authMode: "bearer", provider: "deepseek" };
+  }
+
   const apiKey = (process.env.X5_COPILOT_API_KEY || "").trim();
   const url = (process.env.X5_COPILOT_COMPLETIONS_URL || "").trim();
   const model = (process.env.X5_COPILOT_MODEL || "copilot-flash").trim();
@@ -32,19 +53,20 @@ export function getX5Config(): X5Config | null {
   ) as "bearer" | "x-api-key";
 
   if (!apiKey || !url || apiKey === "your-key-here") return null;
-  return { apiKey, url, model, authMode };
+  return { apiKey, url, model, authMode, provider: "x5" };
 }
 
 /**
  * Candidate endpoint URLs to try, in order.
  *
- * The integration guide documents `api-copilot.x5.ru`, but that host does not
- * always resolve, while `copilot.x5.ru` / `api.x5.ru` do. To save the user from
- * guessing the right host, we try the configured URL first and then the same
- * path on known alternate hosts. We only fall through on network/DNS errors —
- * never on a real HTTP response (auth, 4xx, 5xx) from a host that answered.
+ * For X5 the integration guide documents `api-copilot.x5.ru`, but that host
+ * does not always resolve, while `copilot.x5.ru` / `api.x5.ru` do. We try the
+ * configured URL first and then the same path on known alternate hosts. We
+ * only fall through on network/DNS errors — never on a real HTTP response.
+ * For other providers (e.g. DeepSeek) we only use the configured URL.
  */
-export function candidateUrls(primary: string): string[] {
+export function candidateUrls(primary: string, provider: "x5" | "deepseek" = "x5"): string[] {
+  if (provider !== "x5") return [primary];
   const urls = [primary];
   try {
     const u = new URL(primary);
@@ -93,7 +115,7 @@ export async function x5ChatCompletion(
     };
   }
 
-  const { apiKey, url, model, authMode } = cfg;
+  const { apiKey, url, model, authMode, provider } = cfg;
   const temperature = opts.temperature ?? 0.2;
   const timeoutMs = opts.timeoutMs ?? 25000;
 
@@ -108,7 +130,7 @@ export async function x5ChatCompletion(
   let lastStatus: number | undefined;
 
   // Try the configured URL, then known alternate hosts on network/DNS errors.
-  for (const endpoint of candidateUrls(url)) {
+  for (const endpoint of candidateUrls(url, provider)) {
     for (const authHeaders of variants) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);

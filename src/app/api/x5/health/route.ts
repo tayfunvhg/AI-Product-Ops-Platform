@@ -26,9 +26,12 @@ export async function GET() {
     { temperature: 0, timeoutMs: 15000 }
   );
 
+  const providerName = cfg.provider === "deepseek" ? "DeepSeek" : "X5 Copilot";
+
   return NextResponse.json({
     ok: res.ok,
     configured: true,
+    provider: cfg.provider,
     model: cfg.model,
     authMode: cfg.authMode,
     endpoint: cfg.url,
@@ -36,7 +39,7 @@ export async function GET() {
     status: res.status,
     sample: res.ok ? res.text.slice(0, 200) : undefined,
     message: res.ok
-      ? "Подключение к X5 Copilot успешно."
+      ? `Подключение к ${providerName} успешно.`
       : `Не удалось подключиться: ${res.error ?? "неизвестная ошибка"}`,
   });
 }
