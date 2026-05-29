@@ -1,15 +1,33 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Markdown from "./Markdown";
 
 // `content` is what we send to the model; `display` (optional) is the shorter
 // version shown in the chat bubble (so big attachments don't flood the UI).
 type Msg = { role: "user" | "assistant"; content: string; display?: string };
-type Attachment = { name: string; content: string };
+// `content` is the extracted text (empty for images); `note` is a human hint.
+type Attachment = { name: string; content: string; kind: string; note?: string };
 
-const ACCEPT = ".txt,.md,.markdown,.json,.csv,.tsv,.yml,.yaml,.log";
+// Supported uploads: presentations, PDFs, Markdown and images. Text is
+// extracted server-side via /api/extract.
+const ACCEPT = ".pdf,.pptx,.md,.markdown,image/*";
 const MAX_FILES = 5;
-const MAX_CHARS = 20000; // per file, keeps payloads sane for a prototype
+
+function fileIcon(kind: string): string {
+  switch (kind) {
+    case "pdf":
+      return "📕";
+    case "pptx":
+      return "📊";
+    case "markdown":
+      return "📝";
+    case "image":
+      return "🖼️";
+    default:
+      return "📄";
+  }
+}
 
 export default function AgentPanel({
   agentId,
@@ -19,6 +37,7 @@ export default function AgentPanel({
   compact = false,
   featured = false,
   greeting,
+  requiresMaterials = false,
 }: {
   agentId: string;
   name: string;
@@ -27,6 +46,8 @@ export default function AgentPanel({
   compact?: boolean;
   featured?: boolean;
   greeting?: string;
+  /** Lock suggestion chips until the user attaches at least one file. */
+  requiresMaterials?: boolean;
 }) {
   const [open, setOpen] = useState(!compact);
   const [messages, setMessages] = useState<Msg[]>(
@@ -35,23 +56,129 @@ export default function AgentPanel({
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Persist the conversation so it survives navigating away (page unmount) and
+  // tab reloads — without this, leaving for "Настройки" and coming back wiped
+  // the whole chat because messages lived only in component state.
+  const storageKey = `agent-chat:${agentId}`;
+  const hydrated = useRef(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved) as Msg[];
+        if (Array.isArray(parsed) && parsed.length) setMessages(parsed);
+      }
+    } catch {
+      /* ignore corrupt/unavailable storage */
+    }
+    hydrated.current = true;
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (!hydrated.current) return; // don't overwrite saved chat before restoring
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(messages));
+    } catch {
+      /* storage full or unavailable — non-fatal */
+    }
+  }, [messages, storageKey]);
+
+  function clearConversation() {
+    setMessages(greeting ? [{ role: "assistant", content: greeting }] : []);
+    setAttachments([]);
+    setInput("");
+    setUploadError(null);
+    try {
+      localStorage.removeItem(storageKey);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Suggestion chips run an analysis on the user's materials, so they stay
+  // locked until something is attached. Free-text chat is always allowed.
+  const chipsLocked = requiresMaterials && attachments.length === 0;
+
+  const hasConversation = messages.some((m) => m.role === "user");
+
+  /** Download the visible conversation as a Markdown transcript. */
+  function exportMarkdown() {
+    const now = new Date();
+    const header = [
+      `# Переписка с агентом «${name}»`,
+      "",
+      `*${tagline}*`,
+      "",
+      `Экспортировано: ${now.toLocaleString("ru-RU")}`,
+      "",
+      "---",
+      "",
+    ];
+    const body = messages.map((m) => {
+      const who = m.role === "user" ? "Вы" : name;
+      // Use the bubble text (what the user actually saw on screen).
+      const text = (m.display ?? m.content).trim();
+      return `**${who}:**\n\n${text}\n`;
+    });
+    const md = header.concat(body).join("\n");
+
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const stamp = now.toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `perepiska-${agentId}-${stamp}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   async function onFiles(files: FileList | null) {
     if (!files?.length) return;
-    const picked = Array.from(files).slice(0, MAX_FILES);
-    const read = await Promise.all(
+    const room = MAX_FILES - attachments.length;
+    if (room <= 0) {
+      setUploadError(`Можно прикрепить не более ${MAX_FILES} файлов.`);
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+
+    const picked = Array.from(files).slice(0, room);
+    setExtracting(true);
+    setUploadError(null);
+
+    const results = await Promise.all(
       picked.map(async (f) => {
+        const fd = new FormData();
+        fd.append("file", f);
         try {
-          const text = await f.text();
-          return { name: f.name, content: text.slice(0, MAX_CHARS) };
+          const res = await fetch("/api/extract", { method: "POST", body: fd });
+          const data = await res.json();
+          if (!data?.ok) return { error: data?.error ?? `Не удалось обработать ${f.name}` };
+          return {
+            name: data.name as string,
+            content: (data.text as string) ?? "",
+            kind: (data.kind as string) ?? "",
+            note: data.note as string | undefined,
+          } satisfies Attachment;
         } catch {
-          return { name: f.name, content: "" };
+          return { error: `Ошибка сети при загрузке ${f.name}` };
         }
       })
     );
-    setAttachments((a) => [...a, ...read.filter((r) => r.content)].slice(0, MAX_FILES));
+
+    const ok = results.filter((r): r is Attachment => !("error" in r));
+    const errs = results.flatMap((r) => ("error" in r ? [r.error] : []));
+    if (ok.length) setAttachments((a) => [...a, ...ok].slice(0, MAX_FILES));
+    if (errs.length) setUploadError(errs.join(" • "));
+
+    setExtracting(false);
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -64,7 +191,12 @@ export default function AgentPanel({
       : "";
     const materialsBlock = attachments.length
       ? "\n\nМАТЕРИАЛЫ ОТ ПОЛЬЗОВАТЕЛЯ:\n" +
-        attachments.map((a) => `--- ${a.name} ---\n${a.content}`).join("\n\n")
+        attachments
+          .map((a) => {
+            const body = a.content.trim() || a.note || "(текст не извлечён)";
+            return `--- ${a.name} ---\n${body}`;
+          })
+          .join("\n\n")
       : "";
 
     const apiContent = (typed || "Вот материалы, проанализируй их.") + materialsBlock;
@@ -125,6 +257,26 @@ export default function AgentPanel({
 
       {open && (
         <div className="mt-4 flex flex-col gap-3">
+          {hasConversation && (
+            <div className="flex justify-end gap-4">
+              <button
+                type="button"
+                onClick={exportMarkdown}
+                title="Скачать переписку в формате Markdown"
+                className="text-xs text-white/45 hover:text-white"
+              >
+                ⬇︎ Скачать переписку (.md)
+              </button>
+              <button
+                type="button"
+                onClick={clearConversation}
+                title="Очистить переписку с этим агентом"
+                className="text-xs text-white/45 hover:text-rose-300"
+              >
+                🗑 Очистить
+              </button>
+            </div>
+          )}
           <div
             ref={scrollRef}
             className={`${featured ? "max-h-[28rem]" : "max-h-72"} space-y-3 overflow-y-auto pr-1`}
@@ -132,7 +284,8 @@ export default function AgentPanel({
             {messages.length === 0 && (
               <div className="rounded-xl border border-white/5 bg-ink-800/60 p-3 text-sm text-white/55">
                 Задайте вопрос агенту, выберите подсказку или прикрепите материалы
-                (📎). Агент предлагает артефакты — решение всегда за вами.
+                (📎 PDF, PPTX, Markdown, изображения). Агент предлагает артефакты —
+                решение всегда за вами.
               </div>
             )}
             {messages.map((m, i) => (
@@ -141,13 +294,17 @@ export default function AgentPanel({
                 className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm ${
+                  className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm ${
                     m.role === "user"
-                      ? "bg-brand-500 text-ink-900"
+                      ? "whitespace-pre-wrap bg-brand-500 text-ink-900"
                       : "border border-white/5 bg-ink-800/80 text-white/85"
                   }`}
                 >
-                  {m.display ?? m.content}
+                  {m.role === "assistant" ? (
+                    <Markdown>{m.content}</Markdown>
+                  ) : (
+                    m.display ?? m.content
+                  )}
                 </div>
               </div>
             ))}
@@ -161,24 +318,49 @@ export default function AgentPanel({
           </div>
 
           {!messages.some((m) => m.role === "user") && suggestions.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {suggestions.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => send(s)}
-                  className="chip hover:border-brand-300/40 hover:text-white"
-                >
-                  {s}
-                </button>
-              ))}
+            <div className="flex flex-col gap-2">
+              {chipsLocked && (
+                <p className="text-xs text-white/45">
+                  Приложите материалы (📎), чтобы использовать подсказки. Или просто
+                  напишите сообщение.
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {suggestions.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => send(s)}
+                    disabled={chipsLocked}
+                    title={chipsLocked ? "Сначала приложите материалы (📎)" : undefined}
+                    className="chip enabled:hover:border-brand-300/40 enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {extracting && (
+            <div className="text-xs text-white/45">Обрабатываю файлы…</div>
+          )}
+
+          {uploadError && (
+            <div className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs text-rose-200">
+              {uploadError}
             </div>
           )}
 
           {attachments.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {attachments.map((a, i) => (
-                <span key={i} className="chip border-brand-300/30 bg-brand-300/10 text-brand-100">
-                  📄 {a.name}
+                <span
+                  key={i}
+                  title={a.note}
+                  className="chip border-brand-300/30 bg-brand-300/10 text-brand-100"
+                >
+                  {fileIcon(a.kind)} {a.name}
+                  {a.note && <span className="ml-1 text-amber-300/80">ⓘ</span>}
                   <button
                     onClick={() => setAttachments((arr) => arr.filter((_, j) => j !== i))}
                     className="ml-1 text-white/60 hover:text-white"
@@ -209,8 +391,9 @@ export default function AgentPanel({
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              title="Прикрепить материалы (txt, md, csv, json…)"
-              className="btn-ghost px-3"
+              disabled={extracting}
+              title="Прикрепить материалы (PDF, PPTX, Markdown, изображения)"
+              className="btn-ghost px-3 disabled:opacity-50"
             >
               📎
             </button>
@@ -220,7 +403,11 @@ export default function AgentPanel({
               placeholder="Спросите агента…"
               className="flex-1 rounded-xl border border-white/10 bg-ink-800/80 px-3.5 py-2.5 text-sm text-white outline-none placeholder:text-white/35 focus:border-brand-300/40"
             />
-            <button type="submit" disabled={loading} className="btn-primary disabled:opacity-50">
+            <button
+              type="submit"
+              disabled={loading || extracting}
+              className="btn-primary disabled:opacity-50"
+            >
               Отправить
             </button>
           </form>

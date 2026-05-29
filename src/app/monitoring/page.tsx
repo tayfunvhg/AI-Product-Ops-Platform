@@ -93,6 +93,7 @@ export default function MonitoringPage() {
             tagline={metricGen.tagline}
             suggestions={metricGen.suggestions}
             greeting={metricGen.greeting}
+            requiresMaterials={metricGen.requiresMaterials}
             featured
           />
         </div>

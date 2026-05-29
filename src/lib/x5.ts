@@ -19,7 +19,7 @@ export type X5Config = {
   url: string;
   model: string;
   authMode: "bearer" | "x-api-key";
-  provider: "x5" | "deepseek";
+  provider: "x5" | "deepseek" | "openai";
 };
 
 /**
@@ -41,6 +41,16 @@ export function getX5Config(): X5Config | null {
     const model = (process.env.DEEPSEEK_MODEL || "deepseek-chat").trim();
     if (!apiKey || apiKey === "your-key-here") return null;
     return { apiKey, url, model, authMode: "bearer", provider: "deepseek" };
+  }
+
+  if (provider === "openai") {
+    const apiKey = (process.env.OPENAI_API_KEY || "").trim();
+    const url = (
+      process.env.OPENAI_COMPLETIONS_URL || "https://api.openai.com/v1/chat/completions"
+    ).trim();
+    const model = (process.env.OPENAI_MODEL || "gpt-4o-mini").trim();
+    if (!apiKey || apiKey === "your-key-here") return null;
+    return { apiKey, url, model, authMode: "bearer", provider: "openai" };
   }
 
   const apiKey = (process.env.X5_COPILOT_API_KEY || "").trim();
@@ -65,7 +75,10 @@ export function getX5Config(): X5Config | null {
  * only fall through on network/DNS errors — never on a real HTTP response.
  * For other providers (e.g. DeepSeek) we only use the configured URL.
  */
-export function candidateUrls(primary: string, provider: "x5" | "deepseek" = "x5"): string[] {
+export function candidateUrls(
+  primary: string,
+  provider: "x5" | "deepseek" | "openai" = "x5"
+): string[] {
   if (provider !== "x5") return [primary];
   const urls = [primary];
   try {
@@ -121,8 +134,14 @@ export async function x5ChatCompletion(
 
   const bearer = { Authorization: `Bearer ${apiKey}` };
   const xApiKey = { "X-API-Key": apiKey };
+  // Only X5 supports both auth headers; for OpenAI/DeepSeek the alternate
+  // header just yields a misleading "no API key" error, hiding the real one.
   const variants =
-    authMode === "x-api-key" ? [xApiKey, bearer] : [bearer, xApiKey];
+    provider === "x5"
+      ? authMode === "x-api-key"
+        ? [xApiKey, bearer]
+        : [bearer, xApiKey]
+      : [authMode === "x-api-key" ? xApiKey : bearer];
 
   const body = JSON.stringify({ model, messages, temperature });
 
@@ -132,59 +151,70 @@ export async function x5ChatCompletion(
   // Try the configured URL, then known alternate hosts on network/DNS errors.
   for (const endpoint of candidateUrls(url, provider)) {
     for (const authHeaders of variants) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const resp = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            ...authHeaders,
-          },
-          body,
-          signal: controller.signal,
-          cache: "no-store",
-        });
-        clearTimeout(timer);
-        lastStatus = resp.status;
+      // On 429 (rate limit) the provider tells us when to retry; wait and
+      // retry the same request a few times instead of failing the turn.
+      const MAX_RATE_LIMIT_RETRIES = 3;
+      for (let attempt = 0; ; attempt++) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const resp = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+              ...authHeaders,
+            },
+            body,
+            signal: controller.signal,
+            cache: "no-store",
+          });
+          clearTimeout(timer);
+          lastStatus = resp.status;
 
-        if (!resp.ok) {
-          const errText = await safeText(resp);
-          if (resp.status === 401 || resp.status === 403) {
-            lastErr = `auth ${resp.status}: ${errText}`;
-            continue; // retry alternate auth header on this host
+          if (!resp.ok) {
+            const errText = await safeText(resp);
+            if (resp.status === 401 || resp.status === 403) {
+              lastErr = `auth ${resp.status}: ${errText}`;
+              break; // retry alternate auth header on this host
+            }
+            if (resp.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
+              const waitMs = parseRetryDelayMs(errText, resp.headers);
+              lastErr = `HTTP 429: ${errText}`;
+              await sleep(waitMs);
+              continue; // retry the same request after the suggested delay
+            }
+            return {
+              ok: false,
+              text: "",
+              latencyMs: Date.now() - started,
+              model,
+              status: resp.status,
+              error: `HTTP ${resp.status}: ${errText}`,
+            };
           }
+
+          const data = await resp.json().catch(async () => ({
+            _raw_text: await safeText(resp),
+          }));
           return {
-            ok: false,
-            text: "",
+            ok: true,
+            text: extractText(data),
             latencyMs: Date.now() - started,
             model,
             status: resp.status,
-            error: `HTTP ${resp.status}: ${errText}`,
+            raw: data,
           };
+        } catch (e: unknown) {
+          clearTimeout(timer);
+          lastErr =
+            e instanceof Error
+              ? e.name === "AbortError"
+                ? `timeout после ${timeoutMs}ms`
+                : e.message
+              : String(e);
+          break; // network / DNS error -> try next auth variant, then next host
         }
-
-        const data = await resp.json().catch(async () => ({
-          _raw_text: await safeText(resp),
-        }));
-        return {
-          ok: true,
-          text: extractText(data),
-          latencyMs: Date.now() - started,
-          model,
-          status: resp.status,
-          raw: data,
-        };
-      } catch (e: unknown) {
-        clearTimeout(timer);
-        lastErr =
-          e instanceof Error
-            ? e.name === "AbortError"
-              ? `timeout после ${timeoutMs}ms`
-              : e.message
-            : String(e);
-        // network / DNS error -> try next auth variant, then next host
       }
     }
   }
@@ -197,6 +227,33 @@ export async function x5ChatCompletion(
     status: lastStatus,
     error: lastErr || "Запрос к X5 не удался",
   };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * How long to wait before retrying a 429. Prefers the `Retry-After` header,
+ * then the "try again in 4.882s" hint in the body. Clamped to [1s, 15s].
+ */
+function parseRetryDelayMs(errText: string, headers?: Headers): number {
+  const clamp = (ms: number) => Math.min(15000, Math.max(1000, ms));
+
+  const retryAfter = headers?.get("retry-after");
+  if (retryAfter) {
+    const secs = Number(retryAfter);
+    if (Number.isFinite(secs)) return clamp(secs * 1000);
+  }
+
+  const m = errText.match(/try again in ([\d.]+)\s*(ms|s)/i);
+  if (m) {
+    const value = parseFloat(m[1]);
+    const ms = m[2].toLowerCase() === "ms" ? value : value * 1000;
+    if (Number.isFinite(ms)) return clamp(ms + 250); // small safety margin
+  }
+
+  return 5000;
 }
 
 async function safeText(resp: Response): Promise<string> {

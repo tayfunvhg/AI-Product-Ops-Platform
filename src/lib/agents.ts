@@ -9,7 +9,6 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { VISION, ROADMAP, METRICS } from "./mock";
 
 export type AgentModule =
   | "vision"
@@ -29,6 +28,11 @@ export type AgentDef = {
   greeting?: string;
   /** Render this agent as a large, featured panel. */
   featured?: boolean;
+  /**
+   * Agent only acts on user-supplied materials. The UI disables suggestion
+   * chips until at least one file is attached (free-text chat still works).
+   */
+  requiresMaterials?: boolean;
 };
 
 /** Read a prompt file from src/prompts. Returns "" if missing. */
@@ -38,29 +42,6 @@ function loadPrompt(file: string): string {
   } catch {
     return "";
   }
-}
-
-/**
- * Live platform context injected into the Metric Generator so it can work in
- * "Режим 1 (с целями)" against this product's actual vision, goals and metrics.
- */
-function platformContextForMetrics(): string {
-  const today = new Date().toISOString().slice(0, 10);
-  const goals = ROADMAP.map((o, i) => {
-    const krs = o.keyResults.map((k) => `   - ${k.text} (метрика: ${k.metric})`).join("\n");
-    return `${i + 1}. ${o.objective}\n${krs}`;
-  }).join("\n");
-  const existing = METRICS.map((m) => `- ${m.name}: ${m.value} (${m.delta})`).join("\n");
-
-  return [
-    "\n\n---\n\n## КОНТЕКСТ ПЛАТФОРМЫ (материалы для работы)\n",
-    `Сегодняшняя дата: ${today}. Продукт: «AI Product Ops» (платформа продуктового управления с ИИ в X5).`,
-    `\n### Видение продукта\n${VISION.current}`,
-    `\n### Стратегические ставки\n${VISION.bets.map((b) => `- ${b}`).join("\n")}`,
-    `\n### Цели/OKR (используй как «цели PO» для Режима 1)\n${goals}`,
-    `\n### Уже отслеживаемые метрики (для проверки пересечений)\n${existing}`,
-    "\nИспользуй эти материалы как первичные. Если чего-то не хватает — уточняй у PO, не выдумывай.",
-  ].join("\n");
 }
 
 const BASE_POLICY = `Ты — ИИ-агент платформы AI Product Ops в X5. Отвечай по-русски, кратко и по делу, в духе продуктового менеджмента. Привязывай предложения к метрикам и стратегии продукта. Решение всегда принимает человек (PO/CPO) — ты только предлагаешь артефакты и не утверждаешь, что что-то уже изменено.`;
@@ -73,12 +54,12 @@ export const AGENTS: AgentDef[] = [
     tagline:
       "Помогает сформировать качественные продуктовые метрики через диалог (на основе видения и целей)",
     featured: true,
+    requiresMaterials: true,
     greeting:
-      "Привет! Помогу сформировать метрики продукта — регулярные индикаторы верного движения. Я уже вижу видение, цели/OKR и текущие метрики этого продукта. Можем разобрать цели по очереди и подобрать к ним метрики, доработать существующие или построить RunRate (плановые значения). С чего начнём?",
-    systemPrompt: loadPrompt("metric-generator.md") + platformContextForMetrics(),
+      "Привет! Помогу сформировать метрики продукта — регулярные индикаторы верного движения. Приложите материалы (📎 видение, цели/OKR, описание продукта или презентацию) — и разберём цели и метрики по ним. Если метрик ещё нет, можем просто начать разговор.",
+    systemPrompt: loadPrompt("metric-generator.md"),
     suggestions: [
       "Разбери мои цели и предложи метрики",
-      "Проверь качество текущих метрик",
       "Построим RunRate по ключевым метрикам",
     ],
   },

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAgent } from "@/lib/agents";
 import { getX5Config, x5ChatCompletion, type ChatMessage } from "@/lib/x5";
+import { logAgentTurn } from "@/lib/agentlog";
 
 export const dynamic = "force-dynamic";
 
@@ -25,8 +26,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Неизвестный агент" }, { status: 404 });
   }
 
-  const history = Array.isArray(body.messages) ? body.messages.slice(-12) : [];
-  const userMessages = history.filter((m) => m.role === "user" || m.role === "assistant");
+  // Keep the conversation within a sane size, but NEVER drop the opening
+  // turns — that first user message carries the attached materials and goals.
+  // A naive slice(-N) would truncate them out on long chats, which is why the
+  // agent "forgot the context" and fell back to the prompt's example goals.
+  const convo = (Array.isArray(body.messages) ? body.messages : []).filter(
+    (m) => m.role === "user" || m.role === "assistant"
+  );
+  const HEAD = 3; // greeting + first user message (materials/goals) + first reply
+  const TAIL = 13;
+  const userMessages =
+    convo.length <= HEAD + TAIL
+      ? convo
+      : [...convo.slice(0, HEAD), ...convo.slice(convo.length - TAIL)];
 
   if (!getX5Config()) {
     return NextResponse.json({
@@ -42,6 +54,17 @@ export async function POST(req: NextRequest) {
   ];
 
   const res = await x5ChatCompletion(messages, { temperature: 0.3, timeoutMs: 25000 });
+
+  logAgentTurn({
+    agentId: agent.id,
+    model: res.model,
+    ok: res.ok,
+    latencyMs: res.latencyMs,
+    status: res.status,
+    error: res.error,
+    turns: userMessages, // conversation turns sent (system prompt omitted)
+    reply: res.ok ? res.text : "",
+  });
 
   if (!res.ok) {
     return NextResponse.json({
