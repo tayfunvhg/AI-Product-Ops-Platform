@@ -207,13 +207,22 @@ export async function x5ChatCompletion(
           };
         } catch (e: unknown) {
           clearTimeout(timer);
-          lastErr =
-            e instanceof Error
-              ? e.name === "AbortError"
-                ? `timeout после ${timeoutMs}ms`
-                : e.message
-              : String(e);
-          break; // network / DNS error -> try next auth variant, then next host
+          // A timeout means the model is just slow, not that the host is wrong.
+          // Return immediately — do NOT fall back to alternate hosts/auth, or a
+          // 25s timeout cascades into 60-70s and surfaces a misleading 405 from
+          // the web host (copilot.x5.ru) instead of the real "timeout".
+          if (e instanceof Error && e.name === "AbortError") {
+            return {
+              ok: false,
+              text: "",
+              latencyMs: Date.now() - started,
+              model,
+              status: lastStatus,
+              error: `timeout после ${timeoutMs}ms — модель не успела ответить (вероятно, большой запрос). Попробуйте ещё раз или сократите диалог.`,
+            };
+          }
+          lastErr = e instanceof Error ? e.message : String(e);
+          break; // genuine network / DNS error -> try next host
         }
       }
     }

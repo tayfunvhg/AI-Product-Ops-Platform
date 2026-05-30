@@ -33,12 +33,17 @@ export async function POST(req: NextRequest) {
   const convo = (Array.isArray(body.messages) ? body.messages : []).filter(
     (m) => m.role === "user" || m.role === "assistant"
   );
-  const HEAD = 3; // greeting + first user message (materials/goals) + first reply
-  const TAIL = 13;
+  // Keep the WHOLE conversation for normal sessions. The metric dialog is
+  // stateful — metrics fixed mid-way must stay visible, or the final table
+  // drifts/hallucinates. X5 models give 131k context, so this is affordable.
+  // Only very long chats get trimmed, always preserving the opening turns
+  // (materials/goals) plus the recent tail.
+  const MAX_TURNS = 80;
+  const HEAD = 4;
   const userMessages =
-    convo.length <= HEAD + TAIL
+    convo.length <= MAX_TURNS
       ? convo
-      : [...convo.slice(0, HEAD), ...convo.slice(convo.length - TAIL)];
+      : [...convo.slice(0, HEAD), ...convo.slice(convo.length - (MAX_TURNS - HEAD))];
 
   if (!getX5Config()) {
     return NextResponse.json({
@@ -48,12 +53,23 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Give the model the real current date. Without it, the agent invented dates
+  // (e.g. "24.05.2024") and started RunRate from a past year. The prompt says
+  // "use the date from context" — so we must actually put it in context.
+  const today = new Date().toISOString().slice(0, 10);
+  const systemContent =
+    `${agent.systemPrompt}\n\n---\nСегодняшняя дата: ${today}. ` +
+    `Используй её как «текущую» для дат в таблицах и как стартовый год RunRate. ` +
+    `Год, явно названный пользователем, — приоритетнее.`;
+
   const messages: ChatMessage[] = [
-    { role: "system", content: agent.systemPrompt },
+    { role: "system", content: systemContent },
     ...userMessages,
   ];
 
-  const res = await x5ChatCompletion(messages, { temperature: 0.3, timeoutMs: 25000 });
+  // X5 models can take 10-18s on big RunRate turns (full history + long prompt);
+  // 25s was too tight and caused aborts that surfaced as misleading 405s.
+  const res = await x5ChatCompletion(messages, { temperature: 0.3, timeoutMs: 90000 });
 
   logAgentTurn({
     agentId: agent.id,
