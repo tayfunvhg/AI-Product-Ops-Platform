@@ -1,6 +1,19 @@
 import Link from "next/link";
 import { PageHeader, Sparkline, Section } from "@/components/ui";
-import { HEALTH_INDEX, BACKLOG, METRICS } from "@/lib/mock";
+import { HEALTH_INDEX, BACKLOG, METRICS, ALERTS } from "@/lib/mock";
+
+// Рекомендации для PO с переходом в нужный раздел.
+const RECOMMENDATIONS = [
+  { text: "Retention 9-й недели падает 3 недели — разберите алерт и гипотезы.", href: "/monitoring", cta: "В мониторинг" },
+  { text: "2 предложения агента ждут решения в бэклоге гипотез.", href: "/discovery", cta: "В Discovery" },
+  { text: "Обновите видение по новым материалам через копилот.", href: "/manager", cta: "В ИИ-менеджер" },
+];
+
+const SEVERITY_DOT: Record<string, string> = {
+  high: "bg-rose-400",
+  medium: "bg-amber-400",
+  low: "bg-white/40",
+};
 
 export default function HomePage() {
   const nowItems = BACKLOG.filter((b) => b.status === "now");
@@ -10,7 +23,7 @@ export default function HomePage() {
     <div className="space-y-8">
       <PageHeader
         title="Главная"
-        subtitle="Сводка по здоровью инициатив, динамике и текущему бэклогу. Ваш единый стартовый экран."
+        subtitle="Сводка по зрелости инициатив, динамике и текущему бэклогу. Ваш единый стартовый экран."
         badge="Демо-данные"
       />
 
@@ -18,7 +31,7 @@ export default function HomePage() {
         {/* Мой ИЗИ */}
         <div className="card lg:col-span-1">
           <div className="section-title">Мой ИЗИ</div>
-          <p className="mt-1 text-xs text-white/40">Индекс здоровья инициатив</p>
+          <p className="mt-1 text-xs text-white/40">Индекс зрелости инициатив</p>
           <div className="mt-4 flex items-end gap-3">
             <div className="text-5xl font-black text-white">{HEALTH_INDEX.value}</div>
             <div className="mb-1.5 text-sm font-semibold text-brand-300">
@@ -67,6 +80,45 @@ export default function HomePage() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Рекомендации + дайджест алертов */}
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Section title="Рекомендации">
+          <div className="card space-y-3">
+            {RECOMMENDATIONS.map((r, i) => (
+              <div key={i} className="flex items-start justify-between gap-3 border-b border-white/5 pb-3 last:border-0 last:pb-0">
+                <p className="text-sm text-white/75">{r.text}</p>
+                <Link href={r.href} className="shrink-0 text-xs font-medium text-brand-200 hover:text-brand-100">
+                  {r.cta} →
+                </Link>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        <Section
+          title="Дайджест алертов"
+          right={
+            <Link href="/monitoring" className="text-xs text-brand-300 hover:underline">
+              все алерты →
+            </Link>
+          }
+        >
+          <div className="card space-y-2 p-3">
+            {ALERTS.map((a) => (
+              <Link
+                key={a.id}
+                href="/monitoring"
+                className="flex items-center gap-2 rounded-xl border border-white/5 bg-ink-800/50 px-3 py-2 hover:border-brand-300/30"
+              >
+                <span className={`h-2 w-2 shrink-0 rounded-full ${SEVERITY_DOT[a.severity]}`} />
+                <span className="min-w-0 flex-1 truncate text-sm text-white/75">{a.title}</span>
+                <span className="shrink-0 text-xs text-white/35">{a.time}</span>
+              </Link>
+            ))}
+          </div>
+        </Section>
       </div>
 
       {/* Бэклог */}

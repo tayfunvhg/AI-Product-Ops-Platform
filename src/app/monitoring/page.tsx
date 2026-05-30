@@ -1,24 +1,8 @@
-import { PageHeader, Sparkline } from "@/components/ui";
-import AgentPanel from "@/components/AgentPanel";
-import { agentsForModule } from "@/lib/agents";
-import { METRICS, ALERTS, type Metric, type Alert } from "@/lib/mock";
-
-function MetricCard({ m }: { m: Metric }) {
-  return (
-    <div className="card">
-      <div className="flex items-start justify-between">
-        <div className="text-sm text-white/55">{m.name}</div>
-        <span className={`text-xs font-semibold ${m.good ? "text-brand-300" : "text-rose-400"}`}>
-          {m.trend === "up" ? "▲" : m.trend === "down" ? "▼" : "—"} {m.delta}
-        </span>
-      </div>
-      <div className="mt-2 flex items-end justify-between">
-        <div className="text-3xl font-bold text-white">{m.value}</div>
-        <Sparkline data={m.spark} good={m.good} />
-      </div>
-    </div>
-  );
-}
+import { PageHeader, CopilotsHint } from "@/components/ui";
+import MetricsBoard from "@/components/MetricsBoard";
+import RunRateTable from "@/components/RunRateTable";
+import { METRICS, ALERTS, type Alert } from "@/lib/mock";
+import { getRunRate } from "@/lib/repo";
 
 function AlertCard({ a }: { a: Alert }) {
   const color =
@@ -42,82 +26,54 @@ function AlertCard({ a }: { a: Alert }) {
   );
 }
 
-function Column({
-  title,
-  metrics,
-  alerts,
-}: {
-  title: string;
-  metrics: Metric[];
-  alerts: Alert[];
-}) {
-  return (
-    <div className="space-y-4">
-      <h2 className="section-title">{title}</h2>
-      <div className="grid gap-4 sm:grid-cols-2">
-        {metrics.map((m) => (
-          <MetricCard key={m.id} m={m} />
-        ))}
-      </div>
-      <div className="space-y-3">
-        {alerts.map((a) => (
-          <AlertCard key={a.id} a={a} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export default function MonitoringPage() {
-  const monitoringAgents = agentsForModule("monitoring");
-  const metricGen = monitoringAgents.find((a) => a.id === "metric-generator");
-  const watcher = monitoringAgents.find((a) => a.id === "monitoring-agent");
   const productMetrics = METRICS.filter((m) => m.kind === "product");
   const productionMetrics = METRICS.filter((m) => m.kind === "production");
   const productAlerts = ALERTS.filter((a) => a.kind === "product");
   const productionAlerts = ALERTS.filter((a) => a.kind === "production");
+  const runRate = getRunRate();
 
   return (
     <div className="space-y-8">
       <PageHeader
         title="Monitoring & Alert"
-        subtitle="Продуктовые и производственные метрики с алертами. Агенты помогают сформировать метрики и объяснить алерты."
+        subtitle="Продуктовые и производственные метрики с динамикой план/факт, RunRate и алертами."
       />
 
-      {metricGen && (
-        <div>
-          <h2 className="section-title mb-3">Генератор метрик</h2>
-          <AgentPanel
-            agentId={metricGen.id}
-            name={metricGen.name}
-            tagline={metricGen.tagline}
-            suggestions={metricGen.suggestions}
-            greeting={metricGen.greeting}
-            requiresMaterials={metricGen.requiresMaterials}
-            featured
-          />
+      <CopilotsHint note="«Генератор метрик» и агент-монитор теперь в ИИ-менеджере. RunRate публикуется в таблицу ниже." />
+
+      {/* Плашки метрик: клик раскрывает график динамики (план/факт). */}
+      <MetricsBoard product={productMetrics} production={productionMetrics} />
+
+      {/* RunRate-таблица — только для продуктовых метрик. */}
+      <RunRateTable data={runRate} />
+
+      {/* Алерты — результат работы агентов-мониторов (в перспективе — реалтайм). */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="section-title">Алерты</h2>
+          <span className="chip border-brand-300/30 bg-brand-300/10 text-brand-100">
+            от агентов-мониторов
+          </span>
         </div>
-      )}
-
-      <div className="grid gap-8 xl:grid-cols-2">
-        <Column title="Мои продуктовые метрики" metrics={productMetrics} alerts={productAlerts} />
-        <Column
-          title="Мои производственные метрики"
-          metrics={productionMetrics}
-          alerts={productionAlerts}
-        />
-      </div>
-
-      <div className="max-w-3xl">
-        <h2 className="section-title mb-3">Цифровой агент по мониторингу</h2>
-        {watcher && (
-          <AgentPanel
-            agentId={watcher.id}
-            name={watcher.name}
-            tagline={watcher.tagline}
-            suggestions={watcher.suggestions}
-          />
-        )}
+        <div className="grid gap-8 xl:grid-cols-2">
+          <div className="space-y-3">
+            <div className="text-xs uppercase tracking-wide text-white/40">Продуктовые</div>
+            {productAlerts.length ? (
+              productAlerts.map((a) => <AlertCard key={a.id} a={a} />)
+            ) : (
+              <p className="text-sm text-white/40">Аномалий не обнаружено.</p>
+            )}
+          </div>
+          <div className="space-y-3">
+            <div className="text-xs uppercase tracking-wide text-white/40">Производственные</div>
+            {productionAlerts.length ? (
+              productionAlerts.map((a) => <AlertCard key={a.id} a={a} />)
+            ) : (
+              <p className="text-sm text-white/40">Аномалий не обнаружено.</p>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

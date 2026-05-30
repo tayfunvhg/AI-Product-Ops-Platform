@@ -5,6 +5,9 @@
 
 export type Trend = "up" | "down" | "flat";
 
+/** One point of a plan/fact time series for a metric chart. */
+export type SeriesPoint = { period: string; plan: number; fact: number };
+
 export type Metric = {
   id: string;
   name: string;
@@ -14,7 +17,25 @@ export type Metric = {
   good: boolean; // whether the current trend is good
   spark: number[];
   kind: "product" | "production";
+  /** Unit suffix for chart tooltips/axis (e.g. "%", " дн", " млн"). */
+  unit?: string;
+  /** Plan vs fact over time — drives the expandable chart on the metric card. */
+  series?: SeriesPoint[];
 };
+
+/** Shared monthly periods for the demo metric series. */
+export const METRIC_PERIODS = [
+  "Окт 2025",
+  "Ноя 2025",
+  "Дек 2025",
+  "Янв 2026",
+  "Фев 2026",
+  "Мар 2026",
+];
+
+function series(plan: number[], fact: number[]): SeriesPoint[] {
+  return METRIC_PERIODS.map((period, i) => ({ period, plan: plan[i], fact: fact[i] }));
+}
 
 export type Alert = {
   id: string;
@@ -42,6 +63,17 @@ export type Hypothesis = {
   status: "new" | "in-test" | "validated" | "rejected";
   ice: { impact: number; confidence: number; ease: number };
   source: "agent" | "human";
+  /** Agent proposals land in the backlog tagged "proposal" for PO review. */
+  tag?: "proposal";
+  /** PO decision on a proposal (persisted as feedback for agent calibration). */
+  decision?: "validated" | "rejected";
+  /** Why a proposal was rejected — feedback the agent learns from. */
+  rejectComment?: string;
+  /** Lite-prompt fields: certainty level, verify method, data status, source. */
+  certainty?: "high" | "medium" | "low";
+  verify?: string;
+  data?: string;
+  sourceRef?: string;
 };
 
 export type BacklogItem = {
@@ -70,7 +102,7 @@ export type Roadmap = {
 export const ROLES = ["PO", "CPO", "APO", "Аналитик", "Лид команды"];
 
 export const HEALTH_INDEX = {
-  // "ИЗИ" — Индекс Здоровья Инициатив
+  // "ИЗИ" — Индекс Зрелости Инициатив
   value: 78,
   delta: "+6",
   trend: "up" as Trend,
@@ -93,6 +125,8 @@ export const METRICS: Metric[] = [
     good: true,
     spark: [28, 29, 30, 31, 30, 32, 33, 34],
     kind: "product",
+    unit: "%",
+    series: series([30, 31, 32, 33, 34, 35], [29.5, 30.2, 31.1, 32.4, 33.6, 34.2]),
   },
   {
     id: "m2",
@@ -103,6 +137,8 @@ export const METRICS: Metric[] = [
     good: false,
     spark: [45, 44, 44, 43, 43, 42, 42, 41],
     kind: "product",
+    unit: "%",
+    series: series([45, 45, 45, 44, 44, 44], [45, 44.2, 43.5, 43, 42, 41]),
   },
   {
     id: "m3",
@@ -113,6 +149,8 @@ export const METRICS: Metric[] = [
     good: true,
     spark: [1.1, 1.12, 1.15, 1.17, 1.18, 1.2, 1.22, 1.24],
     kind: "product",
+    unit: " млн",
+    series: series([1.12, 1.15, 1.18, 1.2, 1.22, 1.25], [1.1, 1.14, 1.16, 1.19, 1.22, 1.24]),
   },
   {
     id: "m4",
@@ -123,6 +161,8 @@ export const METRICS: Metric[] = [
     good: true,
     spark: [4.2, 4.0, 3.6, 3.2, 2.9, 2.6, 2.3, 2.1],
     kind: "product",
+    unit: " дн",
+    series: series([4, 3.6, 3.2, 2.8, 2.4, 2], [4.2, 3.7, 3.3, 2.9, 2.4, 2.1]),
   },
   {
     id: "m5",
@@ -133,6 +173,8 @@ export const METRICS: Metric[] = [
     good: true,
     spark: [42, 39, 34, 30, 27, 24, 20, 18],
     kind: "production",
+    unit: " дн",
+    series: series([40, 34, 29, 25, 21, 18], [42, 36, 31, 27, 22, 18]),
   },
   {
     id: "m6",
@@ -143,6 +185,8 @@ export const METRICS: Metric[] = [
     good: true,
     spark: [40, 44, 48, 51, 55, 58, 60, 63],
     kind: "production",
+    unit: "%",
+    series: series([45, 49, 53, 56, 60, 64], [44, 48, 52, 55, 58, 63]),
   },
   {
     id: "m7",
@@ -153,6 +197,8 @@ export const METRICS: Metric[] = [
     good: true,
     spark: [50, 53, 56, 58, 60, 63, 66, 68],
     kind: "production",
+    unit: "%",
+    series: series([52, 56, 60, 64, 68, 72], [50, 55, 59, 63, 66, 68]),
   },
   {
     id: "m8",
@@ -163,6 +209,8 @@ export const METRICS: Metric[] = [
     good: false,
     spark: [100, 102, 104, 103, 106, 108, 110, 112],
     kind: "production",
+    unit: "%",
+    series: series([100, 100, 100, 100, 100, 100], [100, 103, 105, 104, 108, 112]),
   },
 ];
 
@@ -256,6 +304,47 @@ export const HYPOTHESES: Hypothesis[] = [
     ice: { impact: 7, confidence: 6, ease: 5 },
     source: "agent",
   },
+  // Предложения агента — ждут решения PO (воронка [Предложение]).
+  {
+    id: "h5",
+    title:
+      "Если упростить шаги онбординга с 5 до 3, то конверсия в активацию вырастет, потому что 4 из 6 брифов отмечают сложный старт",
+    metric: "Конверсия в активацию",
+    status: "new",
+    ice: { impact: 8, confidence: 6, ease: 6 },
+    source: "agent",
+    tag: "proposal",
+    certainty: "medium",
+    verify: "A/B-тест",
+    data: "достаточно (метрики из дашборда)",
+    sourceRef: "брифы №2,4,5 + дашборд",
+  },
+  {
+    id: "h6",
+    title:
+      "Если добавить напоминания о незавершённых действиях, то Retention 9-й недели изменится вверх [DATA REQUIRED], потому что в CustDev упоминался отток без касаний",
+    metric: "Retention 9-я неделя",
+    status: "new",
+    ice: { impact: 7, confidence: 4, ease: 7 },
+    source: "agent",
+    tag: "proposal",
+    certainty: "low",
+    verify: "CustDev + анализ когорт",
+    data: "DATA REQUIRED — нет метрик касаний",
+    sourceRef: "CustDev (из диалога)",
+  },
+];
+
+// Алерты генератора гипотез: на что обратить внимание, что проверить.
+export const HYPO_ALERTS = [
+  {
+    id: "ha1",
+    text: "Проблема «сложный онбординг» повторяется в 4 из 6 брифов — сильный сигнал, стоит приоритизировать.",
+  },
+  {
+    id: "ha2",
+    text: "По гипотезе про Retention нет метрик касаний — соберите данные, чтобы поднять уверенность.",
+  },
 ];
 
 export const BACKLOG: BacklogItem[] = [
@@ -326,6 +415,30 @@ export const VISION = {
     { name: "Adoption", target: "70%" },
     { name: "Span of control", target: "1 → 2+" },
     { name: "Time-to-decision", target: "×2" },
+  ],
+};
+
+// RunRate seed for the monitoring table (used until a copilot publishes one).
+// Only plan values are known here; fact/Δ come from Insight later (integration).
+export const RUNRATE_SEED = {
+  product: "AI Product Ops",
+  date: "2026-05-30",
+  periods: ["26Q2", "26Q3", "26Q4", "2027", "2028"],
+  goals: [
+    {
+      goal: "O1: Рост активации",
+      metrics: [
+        { name: "Конверсия в активацию (за мес), %", values: ["35", "37", "39", "43", "48"] },
+        { name: "Time-to-decision (за мес), дн", values: ["2.0", "1.8", "1.6", "1.2", "0.9"] },
+      ],
+    },
+    {
+      goal: "O2: Удержание",
+      metrics: [
+        { name: "Retention 9-й недели (за нед), %", values: ["43", "45", "47", "52", "58"] },
+        { name: "MAU, млн", values: ["1.26", "1.30", "1.34", "1.50", "1.70"] },
+      ],
+    },
   ],
 };
 

@@ -1,7 +1,6 @@
-import { PageHeader, Section } from "@/components/ui";
-import AgentPanel from "@/components/AgentPanel";
-import { agentsForModule } from "@/lib/agents";
+import { Section, CopilotsHint } from "@/components/ui";
 import { BACKLOG } from "@/lib/mock";
+import TrackerSyncButton from "@/components/TrackerSyncButton";
 
 const EXEC_STATES = [
   { key: "В работе", color: "text-amber-300", items: ["Онбординг в 2 шага", "Исследование оттока на 9-й неделе"] },
@@ -10,14 +9,18 @@ const EXEC_STATES = [
 ];
 
 export default function ExecutionPage() {
-  const agents = agentsForModule("execution");
-
   return (
     <div className="space-y-8">
-      <PageHeader
-        title="Execution"
-        subtitle="Доставка инициатив, статусы и синхронизация с трекером. Агент берёт на себя рутину."
-      />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-white">Execution</h1>
+          <p className="mt-1 max-w-2xl text-sm text-white/50">
+            Доставка инициатив, статусы и синхронизация с Трекером. Новые задачи уходят на
+            доску, существующие — сверяются.
+          </p>
+        </div>
+        <TrackerSyncButton />
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-8 lg:col-span-2">
@@ -54,16 +57,7 @@ export default function ExecutionPage() {
         </div>
 
         <div className="space-y-4">
-          <div className="section-title">AI-агенты раздела</div>
-          {agents.map((a) => (
-            <AgentPanel
-              key={a.id}
-              agentId={a.id}
-              name={a.name}
-              tagline={a.tagline}
-              suggestions={a.suggestions}
-            />
-          ))}
+          <CopilotsHint note="Агент исполнения живёт в ИИ-менеджере." />
         </div>
       </div>
     </div>

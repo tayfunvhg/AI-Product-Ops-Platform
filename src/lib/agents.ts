@@ -9,6 +9,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import type { ArtifactType } from "./artifacts";
 
 export type AgentModule =
   | "vision"
@@ -33,6 +34,11 @@ export type AgentDef = {
    * chips until at least one file is attached (free-text chat still works).
    */
   requiresMaterials?: boolean;
+  /**
+   * If set, the agent is a "copilot" that produces an artifact publishable into
+   * the given section (enables the "Опубликовать в раздел" action in the hub).
+   */
+  publishesTo?: ArtifactType;
 };
 
 /** Read a prompt file from src/prompts. Returns "" if missing. */
@@ -55,6 +61,7 @@ export const AGENTS: AgentDef[] = [
       "Помогает сформировать качественные продуктовые метрики через диалог (на основе видения и целей)",
     featured: true,
     requiresMaterials: true,
+    publishesTo: "runrate",
     greeting:
       "Привет! Помогу сформировать метрики продукта — регулярные индикаторы верного движения. Приложите материалы (📎 видение, цели/OKR, описание продукта или презентацию) — и разберём цели и метрики по ним. Если метрик ещё нет, можем просто начать разговор.",
     systemPrompt: loadPrompt("metric-generator.md"),
@@ -65,14 +72,17 @@ export const AGENTS: AgentDef[] = [
   },
   {
     id: "vision-updater",
-    name: "Агент обновления видения",
+    name: "Vision Writer",
     module: "vision",
-    tagline: "Актуализирует видение продукта по новым данным и метрикам",
-    systemPrompt: `${BASE_POLICY}\nТвоя зона — Vision & Strategy. Помогаешь переформулировать видение, цели и стратегические ставки. Предлагай изменения как дифф: что добавить/убрать/переформулировать и почему.`,
+    tagline: "Собирает продуктовое видение через диалог: куда идём, для кого, какая ценность",
+    publishesTo: "vision",
+    greeting:
+      "Привет! Помогу собрать продуктовое видение — куда идём, для кого и какую ценность создаём. Можно начать с нуля (расскажите про продукт), с материалами (📎 пришлите описание, презентации, метрики) или доработать текущее видение.",
+    systemPrompt: loadPrompt("vision-writer.md"),
     suggestions: [
-      "Обнови видение с учётом роста доли AI-решений до 70%",
-      "Сформулируй 3 стратегические ставки на следующий квартал",
-      "Какие риски в текущем видении?",
+      "Соберём видение с нуля — расскажу про продукт",
+      "Вот материалы — проанализируй и спроси по пробелам",
+      "Доработай текущее видение",
     ],
   },
   {
@@ -80,6 +90,7 @@ export const AGENTS: AgentDef[] = [
     name: "Агент гипотез",
     module: "discovery",
     tagline: "Предлагает и приоритизирует продуктовые гипотезы (авто/по запросу)",
+    publishesTo: "hypotheses",
     systemPrompt: `${BASE_POLICY}\nТвоя зона — Discovery. На основе проблем, болей пользователей и метрик предлагай гипотезы в формате: гипотеза → ожидаемый эффект на метрику → как проверить (эксперимент) → оценка усилий.`,
     suggestions: [
       "Предложи 5 гипотез для роста удержания на 9 неделе",
@@ -92,6 +103,7 @@ export const AGENTS: AgentDef[] = [
     name: "Агент по персонам",
     module: "discovery",
     tagline: "Работает с персонами: уточняет JTBD, боли, сценарии",
+    publishesTo: "personas",
     systemPrompt: `${BASE_POLICY}\nТвоя зона — работа с персонами. Помогай уточнять JTBD, боли, барьеры и сценарии использования. Связывай инсайты по персонам с гипотезами.`,
     suggestions: [
       "Опиши JTBD для персоны «Коммерсант»",

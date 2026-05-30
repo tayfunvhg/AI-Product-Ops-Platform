@@ -1,6 +1,4 @@
-import { PageHeader, Section } from "@/components/ui";
-import AgentPanel from "@/components/AgentPanel";
-import { agentsForModule } from "@/lib/agents";
+import { PageHeader, Section, CopilotsHint } from "@/components/ui";
 import { ROADMAP, BACKLOG } from "@/lib/mock";
 
 const COLUMNS: { key: "now" | "next" | "later"; label: string }[] = [
@@ -10,8 +8,6 @@ const COLUMNS: { key: "now" | "next" | "later"; label: string }[] = [
 ];
 
 export default function TacticalPage() {
-  const agents = agentsForModule("tactical");
-
   return (
     <div className="space-y-8">
       <PageHeader
@@ -70,16 +66,7 @@ export default function TacticalPage() {
         </div>
 
         <div className="space-y-4">
-          <div className="section-title">AI-агенты раздела</div>
-          {agents.map((a) => (
-            <AgentPanel
-              key={a.id}
-              agentId={a.id}
-              name={a.name}
-              tagline={a.tagline}
-              suggestions={a.suggestions}
-            />
-          ))}
+          <CopilotsHint note="Агент тактического планирования живёт в ИИ-менеджере." />
         </div>
       </div>
     </div>

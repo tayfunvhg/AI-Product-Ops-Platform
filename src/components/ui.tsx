@@ -1,5 +1,32 @@
 import React from "react";
+import Link from "next/link";
 import type { Trend } from "@/lib/mock";
+
+/**
+ * Pointer card shown where a section's AI agents used to live. All copilots now
+ * live in the "ИИ-менеджер" hub and publish their results back into sections.
+ */
+export function CopilotsHint({ note }: { note?: string }) {
+  return (
+    <Link
+      href="/manager"
+      className="card-green block transition hover:ring-1 hover:ring-brand-300/40"
+    >
+      <div className="flex items-center gap-3">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-500/90 text-ink-900">
+          🧠
+        </div>
+        <div>
+          <div className="font-semibold text-white">Копилоты — в разделе «ИИ-менеджер»</div>
+          <p className="mt-0.5 text-sm text-white/55">
+            {note ?? "Все ИИ-агенты собраны в одном месте. Результат публикуется сюда."}
+          </p>
+        </div>
+        <span className="ml-auto text-brand-200">→</span>
+      </div>
+    </Link>
+  );
+}
 
 export function PageHeader({
   title,
