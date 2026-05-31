@@ -43,6 +43,27 @@ export default function HypothesisBacklog({ hypotheses }: { hypotheses: Hypothes
   const [newTitle, setNewTitle] = useState("");
   const [newMetric, setNewMetric] = useState("");
   const [adding, setAdding] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [genMsg, setGenMsg] = useState<string | null>(null);
+
+  async function generate() {
+    setGenerating(true);
+    setGenMsg(null);
+    try {
+      const res = await fetch("/api/generate-hypotheses", { method: "POST" });
+      const d = await res.json();
+      if (d?.ok) {
+        setGenMsg(`Готово: добавлено предложений — ${d.count}. Проверьте ниже.`);
+        router.refresh();
+      } else {
+        setGenMsg(d?.error ?? "Не удалось сгенерировать");
+      }
+    } catch {
+      setGenMsg("Ошибка сети при генерации");
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   async function addManual() {
     if (!newTitle.trim()) return;
@@ -104,6 +125,22 @@ export default function HypothesisBacklog({ hypotheses }: { hypotheses: Hypothes
 
   return (
     <div className="space-y-4">
+      {/* Проактивная генерация: «предлагаю сам» на основе всех данных */}
+      <div className="space-y-2">
+        <button onClick={generate} disabled={generating} className="btn-primary w-full disabled:opacity-50">
+          {generating ? "Генерирую на основе данных…" : "✨ Сгенерировать предложения"}
+        </button>
+        <p className="text-xs text-white/40">
+          Агент сам соберёт контекст (видение, метрики, персоны, бэклог, брифы) и предложит
+          гипотезы. Нужен доступ к LLM (X5/VPN).
+        </p>
+        {genMsg && (
+          <div className="rounded-xl border border-brand-300/30 bg-brand-300/10 px-3 py-2 text-xs text-brand-100">
+            {genMsg}
+          </div>
+        )}
+      </div>
+
       {/* Воронка предложений агента */}
       <div>
         <div className="mb-2 flex items-center justify-between">
