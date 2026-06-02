@@ -442,6 +442,22 @@ export const RUNRATE_SEED = {
   ],
 };
 
+// Результаты исследований (Discovery). summary — для контекста генератора гипотез.
+export const RESEARCH = [
+  {
+    id: "r1",
+    title: "CustDev: онбординг (8 интервью)",
+    meta: "PDF · 2 нед назад",
+    summary: "5 из 8 жалуются на сложный старт; путаются на шаге 3 из 5; просят меньше полей.",
+  },
+  {
+    id: "r2",
+    title: "A/B: подборки на главной",
+    meta: "отчёт · 1 мес назад",
+    summary: "Персонализированные подборки дали +1.5 п.п. к Retention 9-й недели в тесте.",
+  },
+];
+
 export const PRESENTATIONS = [
   { id: "pr1", title: "Видение AI Product Ops — Q2", updated: "2 дня назад", slides: 18 },
   { id: "pr2", title: "Стратегия на полугодие", updated: "1 неделю назад", slides: 24 },

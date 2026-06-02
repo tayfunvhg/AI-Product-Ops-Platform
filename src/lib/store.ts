@@ -45,3 +45,27 @@ export function writeCollection<T>(name: string, items: T[]): void {
   ensureDir();
   fs.writeFileSync(fileFor(name), JSON.stringify(items, null, 2), "utf8");
 }
+
+/** Read the single settings object (data/settings.json). */
+export function readSettings<T extends object>(seed: T): T {
+  ensureDir();
+  const file = fileFor("settings");
+  if (!fs.existsSync(file)) return seed;
+  try {
+    return { ...seed, ...(JSON.parse(fs.readFileSync(file, "utf8")) as Partial<T>) };
+  } catch {
+    return seed;
+  }
+}
+
+export function writeSettings<T extends object>(patch: Partial<T>): void {
+  ensureDir();
+  const file = fileFor("settings");
+  let current: Record<string, unknown> = {};
+  try {
+    if (fs.existsSync(file)) current = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    /* ignore */
+  }
+  fs.writeFileSync(file, JSON.stringify({ ...current, ...patch }, null, 2), "utf8");
+}

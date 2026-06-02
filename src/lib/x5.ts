@@ -14,13 +14,39 @@ export type ChatMessage = {
   content: string;
 };
 
+import { readSettings } from "./store";
+
 export type X5Config = {
   apiKey: string;
   url: string;
   model: string;
   authMode: "bearer" | "x-api-key";
-  provider: "x5" | "deepseek" | "openai";
+  provider: "x5" | "deepseek" | "openai" | "polza";
 };
+
+/**
+ * Selectable models shown in Settings. X5 is #1 (default), Kimi (Polza) is #2.
+ * The active choice is persisted server-side (data/settings.json) and applied
+ * globally to all agents via getX5Config().
+ */
+export type ModelOption = { id: string; label: string; sub: string; provider: "x5" | "polza" };
+
+export const MODEL_OPTIONS: ModelOption[] = [
+  { id: "x5", label: "X5 Copilot", sub: "x5-airun-medium · корпоративный VPN X5", provider: "x5" },
+  {
+    id: "kimi",
+    label: "Kimi K2.5 (Polza.ai)",
+    sub: "moonshotai/kimi-k2.5 · без VPN",
+    provider: "polza",
+  },
+];
+
+/** Active model id for the UI (explicit choice, else mapped from env, else x5). */
+export function getActiveModelId(): string {
+  const chosen = readSettings<{ activeModel?: string }>({}).activeModel;
+  if (chosen && MODEL_OPTIONS.some((o) => o.id === chosen)) return chosen;
+  return (process.env.LLM_PROVIDER || "").trim().toLowerCase() === "polza" ? "kimi" : "x5";
+}
 
 /**
  * Resolve LLM provider config from env.
@@ -30,8 +56,37 @@ export type X5Config = {
  * public, OpenAI-compatible endpoint). Both are chat-completions compatible,
  * so the rest of the client is unchanged.
  */
+function polzaConfig(): X5Config | null {
+  const apiKey = (process.env.POLZA_API_KEY || "").trim();
+  const url = (process.env.POLZA_COMPLETIONS_URL || "https://api.polza.ai/api/v1/chat/completions").trim();
+  const model = (process.env.POLZA_MODEL || "moonshotai/kimi-k2.5").trim();
+  if (!apiKey || apiKey === "your-key-here") return null;
+  return { apiKey, url, model, authMode: "bearer", provider: "polza" };
+}
+
+function x5Config(): X5Config | null {
+  const apiKey = (process.env.X5_COPILOT_API_KEY || "").trim();
+  const url = (process.env.X5_COPILOT_COMPLETIONS_URL || "").trim();
+  const model = (process.env.X5_COPILOT_MODEL || "copilot-flash").trim();
+  const authMode = (
+    (process.env.X5_COPILOT_AUTH_MODE || "bearer").trim().toLowerCase() === "x-api-key"
+      ? "x-api-key"
+      : "bearer"
+  ) as "bearer" | "x-api-key";
+  if (!apiKey || !url || apiKey === "your-key-here") return null;
+  return { apiKey, url, model, authMode, provider: "x5" };
+}
+
 export function getX5Config(): X5Config | null {
+  // Explicit UI choice (Settings) wins and applies globally.
+  const chosen = readSettings<{ activeModel?: string }>({}).activeModel;
+  if (chosen === "kimi") return polzaConfig();
+  if (chosen === "x5") return x5Config();
+
+  // No explicit choice → env-based behavior (x5 default; openai/deepseek for tests).
   const provider = (process.env.LLM_PROVIDER || "x5").trim().toLowerCase();
+
+  if (provider === "polza") return polzaConfig();
 
   if (provider === "deepseek") {
     const apiKey = (process.env.DEEPSEEK_API_KEY || "").trim();
@@ -53,17 +108,7 @@ export function getX5Config(): X5Config | null {
     return { apiKey, url, model, authMode: "bearer", provider: "openai" };
   }
 
-  const apiKey = (process.env.X5_COPILOT_API_KEY || "").trim();
-  const url = (process.env.X5_COPILOT_COMPLETIONS_URL || "").trim();
-  const model = (process.env.X5_COPILOT_MODEL || "copilot-flash").trim();
-  const authMode = (
-    (process.env.X5_COPILOT_AUTH_MODE || "bearer").trim().toLowerCase() === "x-api-key"
-      ? "x-api-key"
-      : "bearer"
-  ) as "bearer" | "x-api-key";
-
-  if (!apiKey || !url || apiKey === "your-key-here") return null;
-  return { apiKey, url, model, authMode, provider: "x5" };
+  return x5Config();
 }
 
 /**
@@ -77,7 +122,7 @@ export function getX5Config(): X5Config | null {
  */
 export function candidateUrls(
   primary: string,
-  provider: "x5" | "deepseek" | "openai" = "x5"
+  provider: "x5" | "deepseek" | "openai" | "polza" = "x5"
 ): string[] {
   if (provider !== "x5") return [primary];
   const urls = [primary];

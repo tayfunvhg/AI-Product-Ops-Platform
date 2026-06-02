@@ -1,5 +1,6 @@
 import { PageHeader, Section } from "@/components/ui";
 import X5ConnectionTest from "@/components/X5ConnectionTest";
+import ModelSelector from "@/components/ModelSelector";
 import { SOURCES } from "@/lib/mock";
 
 type Source = { id: string; name: string; desc: string; connected: boolean };
@@ -39,7 +40,11 @@ export default function SettingsPage() {
         subtitle="Источники для ввода и вывода артефактов, а также подключение LLM для агентов."
       />
 
-      <Section title="LLM для агентов">
+      <Section title="Выбор ИИ-модели">
+        <ModelSelector />
+      </Section>
+
+      <Section title="Подключение LLM">
         <X5ConnectionTest />
       </Section>
 

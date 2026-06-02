@@ -1,5 +1,5 @@
 import { PageHeader, Section, CopilotsHint } from "@/components/ui";
-import { BRIEFS, HYPO_ALERTS } from "@/lib/mock";
+import { BRIEFS, HYPO_ALERTS, RESEARCH } from "@/lib/mock";
 import { getHypotheses, getPersonas } from "@/lib/repo";
 import HypothesisBacklog from "@/components/HypothesisBacklog";
 import PersonasBoard from "@/components/PersonasBoard";
@@ -78,10 +78,7 @@ export default function DiscoveryPage() {
       {/* Результаты исследований */}
       <MaterialsPanel
         title="Результаты исследований"
-        initial={[
-          { id: "r1", title: "CustDev: онбординг (8 интервью)", meta: "PDF · 2 нед назад" },
-          { id: "r2", title: "A/B: подборки на главной", meta: "отчёт · 1 мес назад" },
-        ]}
+        initial={RESEARCH.map((r) => ({ id: r.id, title: r.title, meta: r.meta }))}
       />
     </div>
   );

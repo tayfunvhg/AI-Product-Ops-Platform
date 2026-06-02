@@ -2,8 +2,15 @@ import { NextResponse } from "next/server";
 import { getAgent } from "@/lib/agents";
 import { x5ChatCompletion, getX5Config, type ChatMessage } from "@/lib/x5";
 import { parseHypotheses } from "@/lib/parsers";
-import { saveArtifact, publishArtifact, getVision, getPersonas } from "@/lib/repo";
-import { METRICS, BACKLOG, BRIEFS } from "@/lib/mock";
+import {
+  saveArtifact,
+  publishArtifact,
+  getVision,
+  getPersonas,
+  getRunRate,
+  getHypotheses,
+} from "@/lib/repo";
+import { METRICS, BACKLOG, BRIEFS, RESEARCH } from "@/lib/mock";
 
 export const dynamic = "force-dynamic";
 
@@ -27,17 +34,59 @@ export async function POST() {
     });
   }
 
-  // ── Assemble context from everything the platform knows ──
+  // ── Assemble a COMPREHENSIVE context from every section ──
   const vision = getVision();
   const personas = getPersonas();
+  const runrate = getRunRate();
+  const existing = getHypotheses();
+
+  // Раздел «Видение и стратегия» — целиком.
+  const visionBlock = [
+    `Формулировка: ${vision.current}`,
+    vision.bets?.length ? `Стратегические ставки: ${vision.bets.join("; ")}` : "",
+    vision.strategyByYear?.length
+      ? `Стратегия по годам: ${vision.strategyByYear
+          .map((s) => `${s.year} — ${s.title}${s.orientir ? ` [${s.orientir}]` : ""}: ${s.results.join(", ")}`)
+          .join(" | ")}`
+      : "",
+    vision.goalsTarget?.length
+      ? `Целевые цели: ${vision.goalsTarget.map((g) => `${g.name}=${g.value}`).join("; ")}`
+      : vision.metricsTargets?.length
+      ? `Цели: ${vision.metricsTargets.map((m) => `${m.name}=${m.target}`).join("; ")}`
+      : "",
+    vision.goalsBase?.length
+      ? `База (сейчас): ${vision.goalsBase.map((g) => `${g.name}=${g.value}`).join("; ")}`
+      : "",
+    vision.context ? `Контекст/риски: ${vision.context}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  // Раздел «Метрики» — факт + плановый RunRate.
+  const runrateBlock = runrate.goals
+    .map(
+      (g) =>
+        `  ${g.goal}: ${g.metrics
+          .map((m) => `${m.name} → ${m.values.join("/")} (${runrate.periods.join("/")})`)
+          .join("; ")}`
+    )
+    .join("\n");
+
   const ctx = [
-    `ВИДЕНИЕ:\n${vision.current}`,
-    `МЕТРИКИ (факт):\n${METRICS.map((m) => `- ${m.name}: ${m.value} (${m.delta}, тренд ${m.trend})`).join("\n")}`,
+    `РАЗДЕЛ «ВИДЕНИЕ И СТРАТЕГИЯ»:\n${visionBlock}`,
+    `РАЗДЕЛ «МЕТРИКИ» — текущие значения:\n${METRICS.map(
+      (m) => `- ${m.name}: ${m.value} (${m.delta}, тренд ${m.trend}, ${m.kind})`
+    ).join("\n")}`,
+    `RunRate (план по периодам):\n${runrateBlock}`,
     `ПЕРСОНЫ:\n${personas
       .map((p) => `- ${p.name} (${p.role}): цель «${p.jtbd}»; боли: ${p.pains.join("; ")}`)
       .join("\n")}`,
-    `БЭКЛОГ:\n${BACKLOG.map((b) => `- [${b.status}] ${b.title} — эффект ${b.impact} (${b.okr})`).join("\n")}`,
-    `БРИФЫ:\n${BRIEFS.map((b) => `- ${b.title} (${b.from}, ${b.status})`).join("\n")}`,
+    `РЕЗУЛЬТАТЫ ИССЛЕДОВАНИЙ:\n${RESEARCH.map((r) => `- ${r.title}: ${r.summary}`).join("\n")}`,
+    `БРИФЫ ОТ ЗАКАЗЧИКОВ:\n${BRIEFS.map((b) => `- ${b.title} (${b.from}, ${b.status})`).join("\n")}`,
+    `БЭКЛОГ ИНИЦИАТИВ:\n${BACKLOG.map((b) => `- [${b.status}] ${b.title} — эффект ${b.impact} (${b.okr})`).join("\n")}`,
+    `УЖЕ ЕСТЬ ГИПОТЕЗЫ (не повторяй их):\n${existing
+      .map((h) => `- ${h.title} [${h.status}]`)
+      .join("\n")}`,
   ].join("\n\n");
 
   const today = new Date().toISOString().slice(0, 10);
@@ -50,9 +99,12 @@ export async function POST() {
   const user: ChatMessage = {
     role: "user",
     content:
-      "Ниже — весь доступный контекст по продукту. Работай в режиме «предлагаю сам»: " +
-      "НЕ задавай уточняющих вопросов, сразу предложи 5–7 продуктовых гипотез на основе того, что есть. " +
-      "Используй ТОЛЬКО числа из контекста; где данных нет — пиши [DATA REQUIRED]. " +
+      "Ниже — ВЕСЬ доступный контекст по продукту из всех разделов платформы: видение и " +
+      "стратегия, метрики и RunRate, персоны, результаты исследований, брифы, бэклог и уже " +
+      "существующие гипотезы. Сделай КОМПЛЕКСНЫЙ анализ — свяжи сигналы из разных разделов " +
+      "(например, боль из исследований + проседающая метрика + цель из видения). Работай в " +
+      "режиме «предлагаю сам»: НЕ задавай вопросов, сразу предложи 5–7 НОВЫХ гипотез (не " +
+      "повторяй уже существующие). Используй ТОЛЬКО числа из контекста; где данных нет — [DATA REQUIRED]. " +
       "Каждую гипотезу выводи СТРОГО в формате (без таблиц):\n\n" +
       "Гипотеза N: Если мы [действие], то [метрика] [изменится/вырастет/снизится], потому что [обоснование].\n" +
       "- Источник: [откуда]\n" +
