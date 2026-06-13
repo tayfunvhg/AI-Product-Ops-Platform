@@ -69,8 +69,12 @@ export type Hypothesis = {
   decision?: "validated" | "rejected";
   /** Why a proposal was rejected — feedback the agent learns from. */
   rejectComment?: string;
-  /** Lite-prompt fields: certainty level, verify method, data status, source. */
-  certainty?: "high" | "medium" | "low";
+  /**
+   * Обоснованность (текстовая шкала из стандарта маркировки §5, System 2):
+   * подтверждено исследованием / частично подтверждено / гипотеза PO / предложение.
+   * НЕ «уверенность высокая/средняя/низкая» — это запрещённый стандартом формат.
+   */
+  basis?: "validated" | "partial" | "hypothesis" | "proposal";
   verify?: string;
   data?: string;
   sourceRef?: string;
@@ -99,7 +103,16 @@ export type Roadmap = {
   keyResults: { text: string; metric: string }[];
 };
 
-export const ROLES = ["PO", "CPO", "APO", "Аналитик", "Лид команды"];
+export const ROLES = ["Менеджер ЦПК", "РО", "СРО"];
+
+// Демо-продукты. Активный продукт хранится в data/settings.json (activeProductId).
+// Артефакты копилотов и состояние конвейера привязаны к выбранному продукту.
+export type Product = { id: string; name: string; tagline?: string };
+export const PRODUCTS: Product[] = [
+  { id: "aipo", name: "AI Product Ops", tagline: "платформа продуктовых процессов" },
+  { id: "pck", name: "ПЦК X5", tagline: "цифровое взаимодействие с покупателями" },
+  { id: "dun", name: "ДУН", tagline: "управление строительством недвижимости" },
+];
 
 export const HEALTH_INDEX = {
   // "ИЗИ" — Индекс Зрелости Инициатив
@@ -314,7 +327,7 @@ export const HYPOTHESES: Hypothesis[] = [
     ice: { impact: 8, confidence: 6, ease: 6 },
     source: "agent",
     tag: "proposal",
-    certainty: "medium",
+    basis: "partial",
     verify: "A/B-тест",
     data: "достаточно (метрики из дашборда)",
     sourceRef: "брифы №2,4,5 + дашборд",
@@ -328,7 +341,7 @@ export const HYPOTHESES: Hypothesis[] = [
     ice: { impact: 7, confidence: 4, ease: 7 },
     source: "agent",
     tag: "proposal",
-    certainty: "low",
+    basis: "hypothesis",
     verify: "CustDev + анализ когорт",
     data: "DATA REQUIRED — нет метрик касаний",
     sourceRef: "CustDev (из диалога)",
@@ -466,14 +479,14 @@ export const PRESENTATIONS = [
 
 export const ROADMAP: Roadmap[] = [
   {
-    objective: "O1: Ускорить активацию новых пользователей",
+    objective: "O1: Рост активации",
     keyResults: [
       { text: "Конверсия в активацию 34% → 40%", metric: "Конверсия в активацию" },
       { text: "Time-to-decision ×2", metric: "Time-to-decision" },
     ],
   },
   {
-    objective: "O2: Повысить удержание",
+    objective: "O2: Удержание",
     keyResults: [
       { text: "Retention 9-й недели 41% → 47%", metric: "Retention 9-я неделя" },
       { text: "MAU +10%", metric: "MAU" },

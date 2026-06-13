@@ -40,6 +40,7 @@ export default function AgentPanel({
   greeting,
   requiresMaterials = false,
   publishesTo,
+  onAgentReply,
 }: {
   agentId: string;
   name: string;
@@ -52,6 +53,8 @@ export default function AgentPanel({
   requiresMaterials?: boolean;
   /** If set, show "Опубликовать в раздел" — publishes the latest reply as an artifact. */
   publishesTo?: ArtifactType;
+  /** Called after every assistant reply (for pipeline gating). */
+  onAgentReply?: () => void;
 }) {
   const [open, setOpen] = useState(!compact);
   const [messages, setMessages] = useState<Msg[]>(
@@ -263,6 +266,7 @@ export default function AgentPanel({
       const data = await res.json();
       const reply: string = data?.reply ?? data?.error ?? "Пустой ответ.";
       setMessages((m) => [...m, { role: "assistant", content: reply }]);
+      onAgentReply?.();
     } catch (e) {
       setMessages((m) => [
         ...m,

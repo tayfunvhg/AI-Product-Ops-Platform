@@ -7,13 +7,16 @@
  *
  * Server-only.
  */
-import { readCollection, writeCollection } from "./store";
+import { readCollection, writeCollection, readSettings, writeSettings } from "./store";
+import { PIPELINE, type StageStatus } from "./pipeline";
 import type {
   Artifact,
   ArtifactSource,
   ArtifactStatus,
   ArtifactType,
+  GoalsPayload,
   RunRatePayload,
+  StrategyPayload,
   VisionPayload,
 } from "./artifacts";
 import {
@@ -21,12 +24,32 @@ import {
   RUNRATE_SEED,
   HYPOTHESES,
   PERSONAS,
+  PRODUCTS,
   type Hypothesis,
   type Persona,
+  type Product,
 } from "./mock";
 import type { ParsedHypothesis, ParsedPersona } from "./parsers";
 
 const COLLECTION = "artifacts";
+
+/* ───────────────────── active product ───────────────────── */
+
+/** Currently selected product id (defaults to the first in the list). */
+export function getActiveProductId(): string {
+  const chosen = readSettings<{ activeProductId?: string }>({}).activeProductId;
+  if (chosen && PRODUCTS.some((p) => p.id === chosen)) return chosen;
+  return PRODUCTS[0]?.id ?? "aipo";
+}
+
+export function setActiveProductId(id: string): void {
+  if (!PRODUCTS.some((p) => p.id === id)) return;
+  writeSettings({ activeProductId: id });
+}
+
+export function listProducts(): Product[] {
+  return PRODUCTS;
+}
 
 function genId(type: ArtifactType): string {
   // Normal Node server context — Date/Math are available (unlike Workflow scripts).
@@ -45,6 +68,7 @@ export function getArtifact(id: string): Artifact | undefined {
 
 /**
  * Create a new artifact (default status "draft") or update an existing one by id.
+ * The artifact is bound to the active product unless productId is explicitly passed.
  */
 export function saveArtifact(input: {
   id?: string;
@@ -53,6 +77,7 @@ export function saveArtifact(input: {
   source?: ArtifactSource;
   status?: ArtifactStatus;
   createdBy?: string;
+  productId?: string;
 }): Artifact {
   const all = readCollection<Artifact>(COLLECTION, []);
   const now = new Date().toISOString();
@@ -81,6 +106,7 @@ export function saveArtifact(input: {
     createdAt: now,
     updatedAt: now,
     createdBy: input.createdBy,
+    productId: input.productId ?? getActiveProductId(),
   };
   all.push(artifact);
   writeCollection(COLLECTION, all);
@@ -112,9 +138,15 @@ export function publishArtifact(id: string, publishedBy?: string): Artifact | un
   return all[idx];
 }
 
-/** Latest published artifact of a type, or null if the section has none yet. */
+/**
+ * Latest published artifact of a type for the active product.
+ * Falls back to artifacts without productId (legacy seed-time artifacts).
+ */
 export function getLatestPublished<T = unknown>(type: ArtifactType): Artifact<T> | null {
-  const published = listArtifacts(type).filter((a) => a.status === "published");
+  const pid = getActiveProductId();
+  const published = listArtifacts(type).filter(
+    (a) => a.status === "published" && (a.productId === pid || a.productId === undefined)
+  );
   if (!published.length) return null;
   return published.sort((a, b) => b.version - a.version)[0] as Artifact<T>;
 }
@@ -126,6 +158,28 @@ export function getLatestPublished<T = unknown>(type: ArtifactType): Artifact<T>
 export function getVision(): VisionPayload {
   const latest = getLatestPublished<VisionPayload>("vision");
   return latest ? latest.payload : (VISION as VisionPayload);
+}
+
+/** Latest published Strategy, with fallback to vision's strategyByYear, then mock. */
+export function getStrategy(): StrategyPayload {
+  const latest = getLatestPublished<StrategyPayload>("strategy");
+  if (latest) return latest.payload;
+  const v = getVision();
+  return {
+    stepsByYear: v.strategyByYear ?? [],
+    focus: v.bets,
+  };
+}
+
+/** Latest published Goals, with fallback to vision's goals, then mock. */
+export function getGoals(): GoalsPayload {
+  const latest = getLatestPublished<GoalsPayload>("goals");
+  if (latest) return latest.payload;
+  const v = getVision();
+  return {
+    target: v.goalsTarget ?? v.metricsTargets.map((m) => ({ name: m.name, value: m.target })),
+    base: v.goalsBase ?? [],
+  };
 }
 
 /** Latest published RunRate (plan values), falling back to the mock seed. */
@@ -158,7 +212,7 @@ function publishedHypotheses(): Hypothesis[] {
     ice: { impact: 5, confidence: 5, ease: 5 },
     source: "agent" as const,
     tag: "proposal" as const,
-    certainty: it.certainty,
+    basis: it.basis,
     verify: it.verify,
     data: it.data,
     sourceRef: it.sourceRef,
@@ -246,4 +300,45 @@ export function setPersonaGoal(id: string, jtbd: string): void {
   if (idx >= 0) all[idx].jtbd = jtbd;
   else all.push({ id, jtbd });
   writeCollection(PERSONA_EDITS, all);
+}
+
+/* ───────────────────── pipeline (hard gating) ───────────────────── */
+
+/** Derived pipeline state for the active product: stage open only after prev validated. */
+export function getPipelineState(): Record<string, StageStatus> {
+  const pid = getActiveProductId();
+  const all = readSettings<{ pipelines?: Record<string, Record<string, string>> }>({}).pipelines ?? {};
+  const raw = all[pid] ?? {};
+  const result: Record<string, StageStatus> = {};
+  let prevValidated = true; // первый этап всегда доступен
+  for (const st of PIPELINE) {
+    if (!prevValidated) {
+      result[st.id] = "locked";
+      continue;
+    }
+    const saved = raw[st.id];
+    result[st.id] = saved === "validated" ? "validated" : saved === "generated" ? "generated" : "open";
+    prevValidated = result[st.id] === "validated";
+  }
+  return result;
+}
+
+export function setPipelineStage(
+  stageId: string,
+  action: "generated" | "validated" | "reset"
+): Record<string, StageStatus> {
+  const pid = getActiveProductId();
+  const all = {
+    ...(readSettings<{ pipelines?: Record<string, Record<string, string>> }>({}).pipelines ?? {}),
+  };
+  const raw = { ...(all[pid] ?? {}) };
+  if (action === "validated") raw[stageId] = "validated";
+  else if (action === "generated") raw[stageId] = "generated";
+  else if (action === "reset") {
+    const idx = PIPELINE.findIndex((s) => s.id === stageId);
+    if (idx >= 0) for (let i = idx; i < PIPELINE.length; i++) delete raw[PIPELINE[i].id];
+  }
+  all[pid] = raw;
+  writeSettings({ pipelines: all });
+  return getPipelineState();
 }

@@ -17,10 +17,12 @@ const STATUS_COLOR: Record<string, string> = {
   validated: "text-brand-300",
   rejected: "text-rose-400",
 };
-const CERTAINTY_LABEL: Record<string, string> = {
-  high: "уверенность высокая",
-  medium: "уверенность средняя",
-  low: "уверенность низкая",
+// Текстовая шкала обоснованности (стандарт маркировки §5, System 2).
+const BASIS_LABEL: Record<string, string> = {
+  validated: "подтверждено исследованием",
+  partial: "частично подтверждено",
+  hypothesis: "гипотеза PO",
+  proposal: "предложение",
 };
 
 function ice(h: Hypothesis) {
@@ -159,8 +161,8 @@ export default function HypothesisBacklog({ hypotheses }: { hypotheses: Hypothes
                   <span className="chip border-brand-300/30 bg-brand-300/10 text-brand-100">
                     🤖 предложение
                   </span>
-                  {h.certainty && (
-                    <span className="text-xs text-white/45">{CERTAINTY_LABEL[h.certainty]}</span>
+                  {h.basis && (
+                    <span className="text-xs text-white/45">{BASIS_LABEL[h.basis]}</span>
                   )}
                 </div>
                 <div className="mt-2 text-sm text-white/85">{h.title}</div>

@@ -8,6 +8,8 @@
 
 export type ArtifactType =
   | "vision"
+  | "strategy"
+  | "goals"
   | "metrics"
   | "runrate"
   | "hypotheses"
@@ -20,6 +22,8 @@ export type ArtifactSource = "copilot" | "manual" | "integration";
 /** Where each artifact type is published (section route + human label). */
 export const ARTIFACT_SECTION: Record<ArtifactType, { href: string; label: string }> = {
   vision: { href: "/vision", label: "Видение и стратегия" },
+  strategy: { href: "/vision", label: "Видение и стратегия" },
+  goals: { href: "/vision", label: "Видение и стратегия" },
   metrics: { href: "/monitoring", label: "Мониторинг" },
   runrate: { href: "/monitoring", label: "Мониторинг" },
   hypotheses: { href: "/discovery", label: "Discovery" },
@@ -30,13 +34,15 @@ export type Artifact<T = unknown> = {
   id: string;
   type: ArtifactType;
   status: ArtifactStatus;
-  /** Monotonic per (type, published) — bumped on publish. */
+  /** Monotonic per (type, published, productId) — bumped on publish. */
   version: number;
   payload: T;
   source: ArtifactSource;
   createdAt: string;
   updatedAt: string;
   createdBy?: string;
+  /** Product the artifact belongs to (multi-product). Older artifacts may omit it. */
+  productId?: string;
 };
 
 /* ─────────────── Payload shapes (typed per artifact type) ─────────────── */
@@ -61,6 +67,29 @@ export type VisionPayload = {
   goalsTarget?: { name: string; value: string }[];
   goalsBase?: { name: string; value: string }[];
   context?: string;
+};
+
+/**
+ * Strategy payload — diagnosis → focus → steps by year (with orientirs).
+ * Parsed from a Strategy Actualizer output OR derived from a vision artifact.
+ */
+export type StrategyPayload = {
+  diagnosis?: string;
+  focus?: string[];
+  stepsByYear: {
+    year: string;
+    title: string;
+    orientir?: string;
+    results: string[];
+  }[];
+  raw?: string;
+};
+
+/** Goals payload — target/base measurable goals with optional aggregations. */
+export type GoalsPayload = {
+  target: { name: string; value: string; aggregation?: string }[];
+  base: { name: string; value: string }[];
+  raw?: string;
 };
 
 /**

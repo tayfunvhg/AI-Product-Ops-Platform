@@ -6,11 +6,11 @@ import { usePathname } from "next/navigation";
 const NAV = [
   { href: "/", label: "Главная", icon: "🏠" },
   { href: "/manager", label: "ИИ-менеджер", icon: "🧠" },
-  { href: "/vision", label: "Vision & Strategy", icon: "🧭" },
+  { href: "/vision", label: "Видение", icon: "🧭" },
   { href: "/discovery", label: "Discovery", icon: "🔎" },
   { href: "/tactical", label: "Tactical Planning", icon: "🗂️" },
   { href: "/execution", label: "Execution", icon: "⚙️" },
-  { href: "/monitoring", label: "Monitoring & Alert", icon: "📈" },
+  { href: "/monitoring", label: "Метрики и алерты", icon: "📈" },
 ];
 
 const NAV_BOTTOM = [{ href: "/settings", label: "Настройки", icon: "⚙️" }];

@@ -10,7 +10,13 @@
  * table where a goal is a row with all period cells empty and a metric is a row
  * whose first cell starts with "— " and whose period cells are filled.
  */
-import type { ArtifactType, RunRatePayload, VisionPayload } from "./artifacts";
+import type {
+  ArtifactType,
+  GoalsPayload,
+  RunRatePayload,
+  StrategyPayload,
+  VisionPayload,
+} from "./artifacts";
 
 /* ───────────────────────────── helpers ───────────────────────────── */
 
@@ -173,12 +179,43 @@ export function parseRunRate(text: string): RunRatePayload & { raw: string } {
   return { product, date, periods, goals, raw: text };
 }
 
+/* ───────────────────────────── strategy ───────────────────────────── */
+
+export function parseStrategy(text: string): StrategyPayload {
+  // Reuse the vision parser: it already extracts strategyByYear from the same
+  // "Year — Title [Ориентир: ...]" pattern used in strategy outputs.
+  const v = parseVision(text);
+  const diagnosis =
+    sectionBetween(text, /Диагноз[^\n]*\n/i, [/Фокус/i, /Шаги/i, /Блок\s*2/i]) || undefined;
+  const focus = bullets(
+    sectionBetween(text, /Фокус[^\n]*\n/i, [/Шаги/i, /Диагноз/i, /Блок\s*2/i])
+  );
+  return {
+    diagnosis,
+    focus: focus.length ? focus : undefined,
+    stepsByYear: v.strategyByYear ?? [],
+    raw: text,
+  };
+}
+
+/* ───────────────────────────── goals ──────────────────────────────── */
+
+export function parseGoals(text: string): GoalsPayload {
+  const v = parseVision(text);
+  return {
+    target: v.goalsTarget ?? v.metricsTargets.map((m) => ({ name: m.name, value: m.target })),
+    base: v.goalsBase ?? [],
+    raw: text,
+  };
+}
+
 /* ──────────────────────────── hypotheses ──────────────────────────── */
 
 export type ParsedHypothesis = {
   title: string;
   metric: string;
-  certainty?: "high" | "medium" | "low";
+  /** Текстовая шкала обоснованности (стандарт маркировки §5, System 2). */
+  basis?: "validated" | "partial" | "hypothesis" | "proposal";
   verify?: string;
   data?: string;
   sourceRef?: string;
@@ -206,13 +243,19 @@ export function parseHypotheses(text: string): { items: ParsedHypothesis[]; raw:
     }
     if (!cur) continue;
 
-    const m = l.match(/^(Источник|Уверенность|Проверка|Данные|Метрика)\s*[:—-]\s*(.+)$/i);
+    const m = l.match(/^(Источник|Обоснованность|Проверка|Данные|Метрика)\s*[:—-]\s*(.+)$/i);
     if (m) {
       const k = m[1].toLowerCase();
       const v = m[2].trim();
       if (k.startsWith("источник")) cur.sourceRef = v;
-      else if (k.startsWith("уверенность"))
-        cur.certainty = /высок/i.test(v) ? "high" : /средн/i.test(v) ? "medium" : "low";
+      else if (k.startsWith("обоснованность"))
+        cur.basis = /подтвержд.*исслед/i.test(v)
+          ? "validated"
+          : /частично/i.test(v)
+          ? "partial"
+          : /предложен/i.test(v)
+          ? "proposal"
+          : "hypothesis";
       else if (k.startsWith("проверка")) cur.verify = v;
       else if (k.startsWith("данные")) cur.data = v;
       else if (k.startsWith("метрика") && !cur.metric) cur.metric = v;
@@ -252,6 +295,10 @@ export function parseArtifact(type: ArtifactType, text: string): unknown {
   switch (type) {
     case "vision":
       return parseVision(text);
+    case "strategy":
+      return parseStrategy(text);
+    case "goals":
+      return parseGoals(text);
     case "runrate":
     case "metrics":
       return parseRunRate(text);

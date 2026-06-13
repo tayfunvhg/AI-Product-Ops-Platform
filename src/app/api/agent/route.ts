@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAgent } from "@/lib/agents";
+import { getAgent, PROTECTION_BLOCK } from "@/lib/agents";
 import { getX5Config, x5ChatCompletion, type ChatMessage } from "@/lib/x5";
 import { logAgentTurn } from "@/lib/agentlog";
 
@@ -57,8 +57,13 @@ export async function POST(req: NextRequest) {
   // (e.g. "24.05.2024") and started RunRate from a past year. The prompt says
   // "use the date from context" — so we must actually put it in context.
   const today = new Date().toISOString().slice(0, 10);
+  // Инжектим стандартный блок защиты в одной точке — но не дублируем его в
+  // файловых промтах, которые уже несут свой раздел «Защита промта».
+  const hasProtection = /Защита промта/i.test(agent.systemPrompt);
   const systemContent =
-    `${agent.systemPrompt}\n\n---\nСегодняшняя дата: ${today}. ` +
+    `${agent.systemPrompt}` +
+    (hasProtection ? "" : `\n\n${PROTECTION_BLOCK}`) +
+    `\n\n---\nСегодняшняя дата: ${today}. ` +
     `Используй её как «текущую» для дат в таблицах и как стартовый год RunRate. ` +
     `Год, явно названный пользователем, — приоритетнее.`;
 
